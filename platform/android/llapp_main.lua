@@ -21,7 +21,16 @@ local path = android.getExternalStoragePath()
 -- The "split" test flavor installs next to the stock app: keep its settings, cache and
 -- history in a separate folder, so it never touches the stock app's data dir.
 if android.prop.flavor == "split" then
-    C.setenv("KO_HOME", path .. "/koreader-split", 1)
+    local ko_home = path .. "/koreader-split"
+    C.setenv("KO_HOME", ko_home, 1)
+    -- Run a pending "Import settings from KOReader" (requested from the menu) now,
+    -- before anything reads the settings. It only reads the stock app's folder.
+    local ok, err = pcall(function()
+        require("import_stock_settings").runPending(path, ko_home)
+    end)
+    if not ok then
+        android.LOGE("ImportFromKOReader: " .. tostring(err))
+    end
 end
 
 -- Set $FONTDIR to android.dir/fonts so MuPDF can find its fonts.

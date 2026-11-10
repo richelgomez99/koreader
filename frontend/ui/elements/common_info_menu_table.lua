@@ -26,6 +26,14 @@ if Device:hasOTAUpdates() then
     common_info.ota_update = OTAManager:getOTAMenuTable()
 end
 
+-- KOReader Split (Android "split" flavor, fork-only): import the stock app's data folder.
+if Device:isAndroid() then
+    local ok, item = pcall(function() return require("import_stock_settings").genMenuItem() end)
+    if ok then
+        common_info.import_stock_settings = item
+    end
+end
+
 common_info.help = {
     text = _("Help"),
 }

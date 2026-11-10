@@ -240,6 +240,7 @@ local order = {
         "mass_storage_actions", -- if Device:canToggleMassStorage()
         "----------------------------",
         "ota_update", -- if Device:hasOTAUpdates()
+        "import_stock_settings", -- if KOReader Split (Android split flavor)
         "help",
         "----------------------------",
         "exit_menu",
