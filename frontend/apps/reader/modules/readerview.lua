@@ -901,6 +901,10 @@ end
 function ReaderView:onSetRotationMode(mode)
     local old_mode = Screen:getRotationMode()
     if mode ~= nil and mode ~= old_mode then
+        if Device:isInMultiWindowMode() then
+            Notification:notify(_("Rotation is not available in split-screen mode."))
+            return
+        end
         Screen:setRotationMode(mode)
         self:rotate(mode, old_mode)
     end

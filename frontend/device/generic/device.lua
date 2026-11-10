@@ -105,6 +105,7 @@ local Device = {
     hasWifiManager = no,
     hasWifiRestore = no,
     isDefaultFullscreen = yes,
+    isInMultiWindowMode = no, -- e.g., Android split-screen: the window can't be rotated
     isHapticFeedbackEnabled = no,
     isDeprecated = no, -- device no longer receive OTA updates
     isTouchDevice = no,

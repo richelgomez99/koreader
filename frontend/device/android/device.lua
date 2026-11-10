@@ -157,6 +157,7 @@ local Device = Generic:extend{
     display_dpi = android.lib.AConfiguration_getDensity(android.app.config),
     isHapticFeedbackEnabled = yes,
     isDefaultFullscreen = function() return android.app.activity.sdkVersion >= 19 end,
+    isInMultiWindowMode = function() return isInMultiWindowMode() end,
     hasClipboard = yes,
     hasOTAUpdates = android.ota.isEnabled,
     hasOTARunning = function() return android.ota.isRunning end,
@@ -205,6 +206,17 @@ end
 function Device:init()
     self.screen = require("ffi/framebuffer_android"):new{device = self, debug = logger.dbg}
     self.powerd = require("device/android/powerd"):new{device = self}
+
+    -- Android ignores orientation requests in multi-window mode (and applies them when leaving it),
+    -- so don't make any: a rotation can't be honored in a pane.
+    local setRotationMode = self.screen.setRotationMode
+    self.screen.setRotationMode = function(screen, mode)
+        if isInMultiWindowMode() and android.hasNativeRotation() then
+            logger.info("Ignoring rotation request in multi-window mode:", mode)
+            return
+        end
+        return setRotationMode(screen, mode)
+    end
 
     -- debounced, as resizing a window may send a burst of events.
     local check_window_size = function() checkWindowSize(self.screen) end

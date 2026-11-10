@@ -71,6 +71,11 @@ end
 function FileManager:onSetRotationMode(mode)
     local old_mode = Screen:getRotationMode()
     if mode ~= nil and mode ~= old_mode then
+        if Device:isInMultiWindowMode() then
+            local Notification = require("ui/widget/notification")
+            Notification:notify(_("Rotation is not available in split-screen mode."))
+            return
+        end
         Screen:setRotationMode(mode)
         if FileManager.instance then
             self:rotate()
