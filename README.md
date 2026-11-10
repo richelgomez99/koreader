@@ -15,6 +15,18 @@
 [Wiki](https://github.com/koreader/koreader/wiki) •
 [Developer docs](http://koreader.rocks/doc/)
 
+## About this fork: Android split-screen
+
+This fork makes KOReader follow its window in Android split-screen (multi-window) mode. Upstream sizes the screen from the whole display, so in split-screen the view is cropped instead of resized. Here the page is laid out for the pane KOReader actually has, and it is laid out again when the divider moves. It was developed and tested on an Onyx Boox Note Max.
+
+The fork builds a separate app, **KOReader Split** (`org.koreader.launcher.split`), which installs next to the stock KOReader and keeps its data in its own `koreader-split` folder. The stock app and its settings are not touched. To bring your existing setup across, use **Import settings from KOReader** in the ☰ menu, just above Help.
+
+### Known behaviour: cut-off lines in continuous view mode
+
+If the last line of a screen is cut off by the status bar, and the same line shows up again at the top of the next screen, the book is in **continuous** view mode. In that mode the book is one long scroll and a page turn moves down by one screen of pixels, so lines are cut wherever the edge of the window falls. This is how continuous mode works in stock KOReader too. It is more noticeable in split-screen because the pane height changes with the divider.
+
+To fix it, open a book, tap the bottom of the screen to open the bottom menu, and in the first tab set **View Mode** to **page**. In page mode every page breaks between lines and keeps its top margin at any divider position.
+
 ## Main features
 
 * **portable**: runs on embedded devices (Cervantes, Kindle, Kobo, PocketBook, reMarkable), Android and Linux computers. Developers can run a KOReader emulator in Linux and MacOS.
