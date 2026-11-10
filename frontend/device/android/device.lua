@@ -78,6 +78,29 @@ local function logWindowState(screen, event_name, in_multi_window)
         rect.left, rect.top, rect.right, rect.bottom, tostring(in_multi_window)))
 end
 
+-- Log what the reader ended up with after a resize, so that layout issues
+-- (text under the status bar...) can be told apart from crash.log.
+local function logReaderLayout(screen)
+    local ReaderUI = package.loaded["apps/reader/readerui"]
+    local ui = ReaderUI and ReaderUI.instance
+    if not ui or not ui.view then return end
+    local view = ui.view
+    local footer = view.footer
+    local footer_h = footer and footer:getHeight() or 0
+    local margins = ""
+    if ui.rolling and ui.document and ui.document.getPageMargins then
+        local m = ui.document:getPageMargins()
+        margins = string.format(", cre margins t%s b%s", tostring(m.top), tostring(m.bottom))
+    end
+    logger.info(string.format("Reader layout: screen %sx%s, ui %sx%s, view %sx%s, view mode %s, footer %s h%s reclaim %s, overlap %s%s, scale(10) %s",
+        screen:getWidth(), screen:getHeight(),
+        ui.dimen and ui.dimen.w or -1, ui.dimen and ui.dimen.h or -1,
+        view.dimen and view.dimen.w or -1, view.dimen and view.dimen.h or -1,
+        tostring(view.view_mode), tostring(view.footer_visible), footer_h,
+        tostring(footer and footer.settings and footer.settings.reclaim_height),
+        tostring(view.page_overlap_enable), margins, screen:scaleBySize(10)))
+end
+
 local function resizeScreen(screen, repaint_all)
     screen:resize()
     local new_size = screen:getSize()
@@ -90,6 +113,7 @@ local function resizeScreen(screen, repaint_all)
         FileManager.instance:reinit(FileManager.instance.path,
             FileManager.instance.focused_file)
     end
+    pcall(logReaderLayout, screen) -- diagnostics only, never break a resize
     if repaint_all then
         -- make sure dialogs are displayed
         UIManager:setDirty("all", "ui")
