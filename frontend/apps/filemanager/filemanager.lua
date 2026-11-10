@@ -62,7 +62,8 @@ end
 
 function FileManager:setRotationMode()
     local locked = G_reader_settings:isTrue("lock_rotation")
-    if not locked then
+    -- NOTE: Rotation isn't possible in multi-window mode (split-screen), keep the current one.
+    if not locked and not Device:isInMultiWindowMode() then
         local mode = G_reader_settings:readSetting("fm_rotation_mode") or Screen.DEVICE_ROTATED_UPRIGHT
         self:onSetRotationMode(mode)
     end

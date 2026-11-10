@@ -978,7 +978,8 @@ function ReaderView:onReadSettings(config)
             config:delSetting("gamma")
         end
     end
-    if G_reader_settings:nilOrFalse("lock_rotation") then
+    -- NOTE: Rotation isn't possible in multi-window mode (split-screen), keep the current one.
+    if G_reader_settings:nilOrFalse("lock_rotation") and not Device:isInMultiWindowMode() then
         local setting_name = self.ui.paging and "kopt_rotation_mode" or "copt_rotation_mode"
         -- document.configurable.rotation_mode is not ready yet
         local rotation_mode = config:readSetting(setting_name)

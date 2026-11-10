@@ -72,33 +72,11 @@ local function logWindowState(screen, event_name, in_multi_window)
         window_h = tonumber(android.lib.ANativeWindow_getHeight(android.app.window))
     end
     local rect = android.app.contentRect
-    logger.info(string.format("Android %s: window %dx%d, buffer %dx%d, metrics %dx%d, content rect [%d,%d,%d,%d], multi-window: %s",
+    logger.dbg(string.format("Android %s: window %dx%d, buffer %dx%d, metrics %dx%d, "
+        .. "content rect [%d,%d,%d,%d], multi-window: %s",
         event_name, window_w, window_h, screen:getWidth(), screen:getHeight(),
         android.getScreenWidth(), android.getScreenHeight(),
         rect.left, rect.top, rect.right, rect.bottom, tostring(in_multi_window)))
-end
-
--- Log what the reader ended up with after a resize, so that layout issues
--- (text under the status bar...) can be told apart from crash.log.
-local function logReaderLayout(screen)
-    local ReaderUI = package.loaded["apps/reader/readerui"]
-    local ui = ReaderUI and ReaderUI.instance
-    if not ui or not ui.view then return end
-    local view = ui.view
-    local footer = view.footer
-    local footer_h = footer and footer:getHeight() or 0
-    local margins = ""
-    if ui.rolling and ui.document and ui.document.getPageMargins then
-        local m = ui.document:getPageMargins()
-        margins = string.format(", cre margins t%s b%s", tostring(m.top), tostring(m.bottom))
-    end
-    logger.info(string.format("Reader layout: screen %sx%s, ui %sx%s, view %sx%s, view mode %s, footer %s h%s reclaim %s, overlap %s%s, scale(10) %s",
-        screen:getWidth(), screen:getHeight(),
-        ui.dimen and ui.dimen.w or -1, ui.dimen and ui.dimen.h or -1,
-        view.dimen and view.dimen.w or -1, view.dimen and view.dimen.h or -1,
-        tostring(view.view_mode), tostring(view.footer_visible), footer_h,
-        tostring(footer and footer.settings and footer.settings.reclaim_height),
-        tostring(view.page_overlap_enable), margins, screen:scaleBySize(10)))
 end
 
 local function resizeScreen(screen, repaint_all)
@@ -113,7 +91,6 @@ local function resizeScreen(screen, repaint_all)
         FileManager.instance:reinit(FileManager.instance.path,
             FileManager.instance.focused_file)
     end
-    pcall(logReaderLayout, screen) -- diagnostics only, never break a resize
     if repaint_all then
         -- make sure dialogs are displayed
         UIManager:setDirty("all", "ui")
@@ -131,7 +108,7 @@ local function checkWindowSize(screen)
         w, h = android.getScreenWidth(), android.getScreenHeight()
     end
     if w > 0 and h > 0 and (w ~= android.screen.width or h ~= android.screen.height) then
-        logger.info(string.format("Window size changed from %dx%d to %dx%d, multi-window: %s",
+        logger.dbg(string.format("Window size changed from %dx%d to %dx%d, multi-window: %s",
             android.screen.width, android.screen.height, w, h, tostring(isInMultiWindowMode())))
         resizeScreen(screen, true)
     end
@@ -181,7 +158,7 @@ local Device = Generic:extend{
     display_dpi = android.lib.AConfiguration_getDensity(android.app.config),
     isHapticFeedbackEnabled = yes,
     isDefaultFullscreen = function() return android.app.activity.sdkVersion >= 19 end,
-    isInMultiWindowMode = function() return isInMultiWindowMode() end,
+    isInMultiWindowMode = isInMultiWindowMode,
     hasClipboard = yes,
     hasOTAUpdates = android.ota.isEnabled,
     hasOTARunning = function() return android.ota.isRunning end,
@@ -236,7 +213,7 @@ function Device:init()
     local setRotationMode = self.screen.setRotationMode
     self.screen.setRotationMode = function(screen, mode)
         if isInMultiWindowMode() and android.hasNativeRotation() then
-            logger.info("Ignoring rotation request in multi-window mode:", mode)
+            logger.dbg("Ignoring rotation request in multi-window mode:", mode)
             return
         end
         return setRotationMode(screen, mode)
@@ -256,11 +233,11 @@ function Device:init()
             local check_window = false
             if window_event then
                 local in_multi_window = isInMultiWindowMode()
-                logWindowState(this.device.screen, window_event, in_multi_window)
                 -- Also check right after leaving multi-window mode.
                 check_window = in_multi_window or was_in_multi_window
                 was_in_multi_window = in_multi_window
                 if check_window then
+                    logWindowState(this.device.screen, window_event, in_multi_window)
                     UIManager:unschedule(check_window_size)
                     UIManager:scheduleIn(0.2, check_window_size)
                 end
