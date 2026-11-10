@@ -46,6 +46,73 @@ local function getCodename()
     return codename
 end
 
+-- NOTE: android.isInMultiWindowMode doesn't exist in older launchers.
+local function isInMultiWindowMode()
+    return android.isInMultiWindowMode ~= nil and android.isInMultiWindowMode() or false
+end
+
+-- Events that may come with a new window size (split-screen, freeform windows, rotation).
+-- NOTE: Android only sends APP_CMD_WINDOW_RESIZED when the size differs from the one the window
+--       was created with, so we can't rely on a single event.
+local window_events = {
+    [C.APP_CMD_CONFIG_CHANGED] = "CONFIG_CHANGED",
+    [C.APP_CMD_CONTENT_RECT_CHANGED] = "CONTENT_RECT_CHANGED",
+    [C.APP_CMD_GAINED_FOCUS] = "GAINED_FOCUS",
+    [C.APP_CMD_WINDOW_REDRAW_NEEDED] = "WINDOW_REDRAW_NEEDED",
+    [C.APP_CMD_WINDOW_RESIZED] = "WINDOW_RESIZED",
+}
+
+-- Whether the last window event happened in multi-window mode.
+local was_in_multi_window = false
+
+local function logWindowState(screen, event_name, in_multi_window)
+    local window_w, window_h = 0, 0
+    if android.app.window ~= nil then
+        window_w = tonumber(android.lib.ANativeWindow_getWidth(android.app.window))
+        window_h = tonumber(android.lib.ANativeWindow_getHeight(android.app.window))
+    end
+    local rect = android.app.contentRect
+    logger.info(string.format("Android %s: window %dx%d, buffer %dx%d, metrics %dx%d, content rect [%d,%d,%d,%d], multi-window: %s",
+        event_name, window_w, window_h, screen:getWidth(), screen:getHeight(),
+        android.getScreenWidth(), android.getScreenHeight(),
+        rect.left, rect.top, rect.right, rect.bottom, tostring(in_multi_window)))
+end
+
+local function resizeScreen(screen, repaint_all)
+    screen:resize()
+    local new_size = screen:getSize()
+    logger.info("Resizing screen to", new_size)
+    local FileManager = require("apps/filemanager/filemanager")
+    UIManager:broadcastEvent(Event:new("SetDimensions", new_size))
+    UIManager:broadcastEvent(Event:new("ScreenResize", new_size))
+    UIManager:broadcastEvent(Event:new("RedrawCurrentPage"))
+    if FileManager.instance then
+        FileManager.instance:reinit(FileManager.instance.path,
+            FileManager.instance.focused_file)
+    end
+    if repaint_all then
+        -- make sure dialogs are displayed
+        UIManager:setDirty("all", "ui")
+    end
+end
+
+-- Resize the screen if it doesn't match the window anymore.
+-- In multi-window mode, the window size comes from the native window (needs a recent koreader-base).
+-- NOTE: Idempotent, and it reads the current size, so that the last check always wins.
+local function checkWindowSize(screen)
+    local w, h
+    if screen.getNativeWindowSize then
+        w, h = screen:getNativeWindowSize()
+    else
+        w, h = android.getScreenWidth(), android.getScreenHeight()
+    end
+    if w > 0 and h > 0 and (w ~= android.screen.width or h ~= android.screen.height) then
+        logger.info(string.format("Window size changed from %dx%d to %dx%d, multi-window: %s",
+            android.screen.width, android.screen.height, w, h, tostring(isInMultiWindowMode())))
+        resizeScreen(screen, true)
+    end
+end
+
 -- third-party app support
 local external = require("device/thirdparty"):new{
     dicts = {
@@ -139,6 +206,9 @@ function Device:init()
     self.screen = require("ffi/framebuffer_android"):new{device = self, debug = logger.dbg}
     self.powerd = require("device/android/powerd"):new{device = self}
 
+    -- debounced, as resizing a window may send a burst of events.
+    local check_window_size = function() checkWindowSize(self.screen) end
+
     local event_map = dofile("frontend/device/android/event_map.lua")
 
     self.input = require("device/input"):new{
@@ -146,6 +216,19 @@ function Device:init()
         event_map = event_map,
         handleMiscEv = function(this, ev)
             logger.dbg("Android application event", ev.code)
+            local window_event = window_events[ev.code]
+            local check_window = false
+            if window_event then
+                local in_multi_window = isInMultiWindowMode()
+                logWindowState(this.device.screen, window_event, in_multi_window)
+                -- Also check right after leaving multi-window mode.
+                check_window = in_multi_window or was_in_multi_window
+                was_in_multi_window = in_multi_window
+                if check_window then
+                    UIManager:unschedule(check_window_size)
+                    UIManager:scheduleIn(0.2, check_window_size)
+                end
+            end
             if ev.code == C.APP_CMD_SAVE_STATE then
                 UIManager:broadcastEvent(Event:new("FlushSettings"))
             elseif ev.code == C.APP_CMD_DESTROY then
@@ -159,19 +242,11 @@ function Device:init()
                 this.device.input:resetState()
             elseif ev.code == C.APP_CMD_CONFIG_CHANGED then
                 -- orientation and size changes
-                if android.screen.width ~= android.getScreenWidth()
-                or android.screen.height ~= android.getScreenHeight() then
-                    this.device.screen:resize()
-                    local new_size = this.device.screen:getSize()
-                    logger.info("Resizing screen to", new_size)
-                    local FileManager = require("apps/filemanager/filemanager")
-                    UIManager:broadcastEvent(Event:new("SetDimensions", new_size))
-                    UIManager:broadcastEvent(Event:new("ScreenResize", new_size))
-                    UIManager:broadcastEvent(Event:new("RedrawCurrentPage"))
-                    if FileManager.instance then
-                        FileManager.instance:reinit(FileManager.instance.path,
-                            FileManager.instance.focused_file)
-                    end
+                -- (in multi-window mode, this is handled by the window size check above)
+                if not check_window
+                and (android.screen.width ~= android.getScreenWidth()
+                or android.screen.height ~= android.getScreenHeight()) then
+                    resizeScreen(this.device.screen)
                 end
                 -- to-do: keyboard connected, disconnected
             elseif ev.code == C.APP_CMD_RESUME then
