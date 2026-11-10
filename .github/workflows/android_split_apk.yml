@@ -1,0 +1,144 @@
+# Fork-only: build an installable arm64 APK of the "split" flavor
+# (org.koreader.launcher.split, data dir /sdcard/koreader-split), which
+# installs next to the stock app. No secrets: the APK is re-signed with
+# uber-apk-signer's embedded debug key, so the signature is stable across runs.
+
+name: Android split test APK
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'KODEBUG=1 (debug native libs + gradle Debug, package …split.debug)'
+        type: boolean
+        default: false
+  push:
+    branches:
+      - 001-android-split-screen
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  apk:
+
+    name: Android ARM64 (split flavor)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 180
+
+    defaults:
+      run:
+        # Same as build_matrix.yml for docker based jobs.
+        shell: stdbuf --error=L --output=L ${{ github.workspace }}/kodev docker kontainer exec bash --noprofile --norc -eo pipefail {0}
+
+    env:
+      BUILD_KIND: ${{ inputs.debug && 'debug' || 'release' }}
+
+    steps:
+
+      # Checkout (same as build_matrix.yml). {{{
+
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          clean: false
+          fetch-depth: 0
+          fetch-tags: true
+          filter: tree:0
+          show-progress: false
+
+      - name: Checkout submodules
+        shell: bash
+        run: git submodule update --depth 1 --init --jobs 4 --recursive
+
+      # }}}
+
+      # Setup. {{{
+
+      - name: Setup build environment
+        shell: bash
+        # NOTE: image and target as in .ci/build_jobs.yml (android-arm64).
+        run: ./.ci/build_environment_setup.sh '{"target":"android-arm64","image":"koreader/koandroid:6.0.0-22.04","env":"PARALLEL_JOBS=4 ANDROID_FLAVOR=Split${{ inputs.debug && ' KODEBUG=1' || '' }}"}'
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: split-android-arm64-ccache-${{ env.BUILD_KIND }}-${{ github.run_id }}
+          restore-keys: split-android-arm64-ccache-${{ env.BUILD_KIND }}-
+
+      - name: Setup build cache
+        run: |
+          set -x
+          which ccache
+          ccache --version
+          ccache --zero-stats
+          ccache --max-size=500M
+          ccache --show-config
+
+      # }}}
+
+      # Build. {{{
+
+      - name: Download
+        run: make download-all
+
+      - name: Build base
+        run: make base
+
+      - name: Save build cache
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: split-android-arm64-ccache-${{ env.BUILD_KIND }}-${{ github.run_id }}
+
+      - name: Install
+        # NOTE: ensure the GitHub token is available so calls to the
+        # REST API don't hit the (very low) unauthenticated rate limit.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make --assume-old=base all
+
+      - name: Update translations
+        run: make po mo
+
+      - name: Generate APK
+        # Note: ensure the build skeleton is created, so there are no dangling
+        # symlinks (e.g. `data/dict`) to trip 7zip during artifact generation…
+        run: make --assume-old=all skeleton update
+
+      # }}}
+
+      # Sign & upload. {{{
+
+      - name: Sign with a stable debug key
+        id: sign
+        shell: bash
+        run: |
+          set -x
+          apks=(koreader-android-arm64*.apk)
+          [[ ${#apks[@]} -eq 1 && -e "${apks[0]}" ]]
+          # No --ks: uber-apk-signer uses its embedded debug keystore.
+          docker run --rm --volume="${PWD}:/work" --workdir=/work koreader/nightswatcher:3.1.0 \
+            uber-apk-signer --allowResign --overwrite --verbose --apks "${apks[0]}"
+          rm -f "${apks[0]}.idsig"
+          ls -l "${apks[0]}"
+          printf 'apk=%s\n' "${apks[0]}" >>"${GITHUB_OUTPUT}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          archive: false
+          path: ${{ steps.sign.outputs.apk }}
+          retention-days: 14
+          if-no-files-found: error
+
+      # }}}
+
+# vim: foldmethod=marker foldlevel=0
