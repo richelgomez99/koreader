@@ -58,6 +58,18 @@ jobs:
 
       # }}}
 
+      - name: Syntax check changed Lua
+        shell: bash
+        run: |
+          sudo apt-get install -y -qq luajit >/dev/null
+          for f in platform/android/import_stock_settings.lua platform/android/llapp_main.lua \
+                   frontend/device/android/device.lua frontend/ui/elements/common_info_menu_table.lua \
+                   frontend/ui/elements/filemanager_menu_order.lua frontend/ui/elements/reader_menu_order.lua \
+                   frontend/apps/filemanager/filemanager.lua frontend/apps/reader/modules/readerview.lua \
+                   base/ffi/framebuffer_android.lua platform/android/luajit-launcher/assets/android.lua; do
+            luajit -bl "$f" >/dev/null && echo "ok $f"
+          done
+
       # Setup. {{{
 
       - name: Setup build environment
