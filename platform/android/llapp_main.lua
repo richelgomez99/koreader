@@ -18,6 +18,12 @@ end
 -- path to primary external storage partition
 local path = android.getExternalStoragePath()
 
+-- The "split" test flavor installs next to the stock app: keep its settings, cache and
+-- history in a separate folder, so it never touches the stock app's data dir.
+if android.prop.flavor == "split" then
+    C.setenv("KO_HOME", path .. "/koreader-split", 1)
+end
+
 -- Set $FONTDIR to android.dir/fonts so MuPDF can find its fonts.
 C.setenv("FONTDIR", android.dir .. "/fonts", 1)
 
